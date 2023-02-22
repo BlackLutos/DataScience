@@ -18,6 +18,8 @@ def crawl():
             title = article.find("div", {"class": "title"}).text.strip()
             meta = article.find("div", {"class": "meta"})
             date = meta.find("div", {"class": "date"}).text.strip()
+            if len(date) == 4:
+                date = str(0) + date
             if not re.match("(Fw: )?\[公告\]", title):
                 href = article.find("a")
                 if href:
