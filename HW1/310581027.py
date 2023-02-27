@@ -12,10 +12,17 @@ import os
 def crawl():
     all_articles = []
     all_popular = []
-    page_num = 3647 # 2022 Year from 3647 to 3955
-    end_page = 3955
+    # article_num = 0
+    # first_article = 0
+    # last_article = 0
+    # popular_num = 0
+    # popular_first = 0
+    # popular_last = 0
+    article_flag = 0
+    page_num = 3600 # 3642
+    end_page = 3951
     while page_num <= end_page:
-        print("Page. " + str(page_num) + "\n")
+        print("Scan Page. " + str(page_num) + "\n")
         query_url = "https://www.ptt.cc/bbs/Beauty/index" + str(page_num) + ".html"
         response = requests.get(query_url, cookies={"over18": "1", "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"})
         soup = BeautifulSoup(response.text, "html.parser")
@@ -28,6 +35,9 @@ def crawl():
             if len(date) == 4:
                 date = str(0) + date
             if not re.match("(Fw: )?\[公告\]", title):
+                # article_num += 1
+                # if "[帥哥] 羅志祥強勢回歸" in title:
+                #     article_flag = 1
                 href = article.find("a")
                 if href:
                     url = "https://www.ptt.cc" + href.get("href")
@@ -36,24 +46,42 @@ def crawl():
                     if popular == "爆":
                         # print(date + ":" + title + " " + url)
                         all_popular.append({"date": date, "title": title, "url": url})
+                # if "[正妹] 孟潔MJ" in title:
+                #     article_flag = 0
+            
                 
         time.sleep(1)
-        print("\n")
         page_num += 1
+    
+    all_articles_new = []
+    First_half_articles = all_articles[:len(all_articles)//2]
+    First_half_date = First_half_articles[-1]["date"]
+    Second_half_articles = all_articles[len(all_articles)//2:]
+    for article in First_half_articles:
+        if article['date'] >= "01/01" and article['date'] <= First_half_date:
+                all_articles_new.append(article)
+    for article in Second_half_articles:
+        if article['date'] >= First_half_date and article['date'] <= "12/31":
+                all_articles_new.append(article)
 
-    # del all_articles[0:2]
-    # del all_articles[-4:]
-    # del all_popular[-1:]
-    if end_page == 3955:
-        del all_articles[0:2]
-        del all_articles[-4:]
-        del all_popular[-1:]
+    all_popular_new = []
+    First_half_popular = all_popular[:len(all_popular)//2]
+    First_half_date = First_half_popular[-1]["date"]
+    Second_half_popular = all_popular[len(all_popular)//2:]
+    for article in First_half_popular:
+        if article['date'] >= "01/01" and article['date'] <= First_half_date:
+                all_popular_new.append(article)
+    for article in Second_half_popular:
+        if article['date'] >= First_half_date and article['date'] <= "12/31":
+                all_popular_new.append(article)
+    
+
 
     with open("all_articles.jsonl", "w", encoding="utf8") as f:
-        for article in all_articles:
+        for article in all_articles_new:
             f.write(json.dumps(article, ensure_ascii=False) + "\n")
     with open("all_popular.jsonl", "w", encoding="utf8") as f:
-        for popular in all_popular:
+        for popular in all_popular_new:
             f.write(json.dumps(popular, ensure_ascii=False) + "\n")
     
 def merge_dict(push_like, push_boo, start_date, end_date):
@@ -254,11 +282,59 @@ def keyword(key_word, start_date, end_date):
                 time.sleep(1)
         time_limit += 1
         # print(img_url)
-    keyword_article.update({"image_urls": img_url})
-    # print(img_url)
-    filename = "keyword_" + key_word + "_" + old_start_date + "_" + old_end_date + ".json"
+    key_word_filename = "keyword_" + key_word + "_" + old_start_date + "_" + old_end_date + ".json"
+    with open(key_word_filename, "w", encoding="utf8") as f:
+        json.dump(img_url, f, ensure_ascii=False)
+
+    # keyword_article.update({"image_urls": img_url})
+    # filename = "keyword_" + key_word + "_" + old_start_date + "_" + old_end_date + ".json"
+    # with open(filename, "w", encoding="utf8") as f:
+    #     json.dump(keyword_article, f, ensure_ascii=False)
+
+    print(start_date, end_date, "done")
+
+def merge_keyword(img_url_list1,img_url_list2, key_word, start_date, end_date):
+    keyword_article = {}
+    img_url_list1.extend(img_url_list2)
+    keyword_article.update({"image_urls": img_url_list1})
+    filename = "keyword_" + key_word + "_" + start_date + "_" + end_date + ".json"
     with open(filename, "w", encoding="utf8") as f:
         json.dump(keyword_article, f, ensure_ascii=False)
+
+def thread_keyword(key_word ,start_date, end_date):
+    start_time = time.time()
+
+    date1_obj = datetime.strptime(start_date, '%m%d').replace(year=datetime.now().year)
+    date2_obj = datetime.strptime(end_date, '%m%d').replace(year=datetime.now().year)
+
+    
+    delta = (date2_obj - date1_obj) / 2
+    middle_date = date1_obj + delta
+    next_date = middle_date + timedelta(days=1)
+    
+    middle_date_str = middle_date.strftime('%m%d')
+    next_date_str = next_date.strftime('%m%d')
+
+   
+    t1 = Thread (target = keyword, args =(key_word,start_date,middle_date_str,))
+    t1.start()
+    t2 = Thread (target = keyword, args =(key_word, next_date_str,end_date,))
+    t2.start()
+    t1.join()
+    t2.join()
+
+    img_url_list1_filename = "keyword_" + key_word + "_" + start_date + "_" + middle_date_str + ".json"
+    img_url_list2_filename = "keyword_" + key_word + "_" + next_date_str + "_" + end_date + ".json"
+
+    with open(img_url_list1_filename, "r", encoding="utf8") as f:
+        img_url_list1 = json.load(f)
+    with open(img_url_list2_filename, "r", encoding="utf8") as f:
+        img_url_list2 = json.load(f)
+
+    merge_keyword(img_url_list1,img_url_list2, key_word, start_date, end_date)
+
+    os.remove(img_url_list1_filename)
+    os.remove(img_url_list2_filename)
 
     
     
@@ -281,10 +357,11 @@ if __name__ == "__main__":
         print("Start pushing...")
         thread_push(str(args.arg2), str(args.arg3))
     elif args.arg1 == "popular":
+        print("Start popular...")
         popular(str(args.arg2), str(args.arg3))
     elif args.arg1 == "keyword":
         print("Strat keyword...")
-        keyword(str(args.arg2), str(args.arg3), str(args.arg4))
+        thread_keyword(str(args.arg2), str(args.arg3), str(args.arg4))
     else:
         print("Invalid command")
 
