@@ -101,7 +101,7 @@ def merge_dict(push_like, push_boo, start_date, end_date):
             boo_count[user["user_id"]] = 1
     boo_counter = sum(boo_count.values())
     boo_count = dict(sorted(boo_count.items(), key=lambda x: (x[1],x[0]), reverse=True))
-    push = {"all-like": like_counter, "all-boo": boo_counter}
+    push = {"all_like": like_counter, "all_boo": boo_counter}
     like_num = 1
     boo_num = 1
     for key in list(like_count.keys())[:10]:
@@ -231,11 +231,12 @@ def popular(start_date, end_date):
                     push_count += 1
                     push_like.append({"user_id": user_id, "like": 1})
             if push_count >= 100:
-                imgs = soup.findAll('a', {'href': re.compile('(https:|http:).*\.(jpg|jpeg|png|gif)$')})
+                imgs = soup.findAll('a', {'href': re.compile('(https:|http:).*\.(jpg|jpeg|png|gif)$',re.IGNORECASE)})
                 url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
                 imgs = url_pattern.findall(str(imgs))
                 step = 1
                 for img in imgs:
+                    # img_url.append(img)
                     if step % 2 != 0:
                         img_url.append(img)
                     step += 1
@@ -262,24 +263,62 @@ def keyword(key_word, start_date, end_date):
     img_url = []
     with open("all_articles.jsonl", "r", encoding="utf8") as f:
         temp_articles = [json.loads(line) for line in f]
+    # for i in temp_articles:
+    #     if key_word in i['title'] and i['date'] >= start_date and i['date'] <= end_date:
+    #         all_articles.append(i)
+    #         # print(i)
     for i in temp_articles:
-        if key_word in i['title'] and i['date'] >= start_date and i['date'] <= end_date:
+        if i["date"] >= start_date and i["date"] <= end_date:
             all_articles.append(i)
-            # print(i)
+
     for article in all_articles:
         url = article["url"]
         response = requests.get(url, cookies={"over18": "1", "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"})
         soup = BeautifulSoup(response.text, "html.parser")
-        imgs = soup.findAll('a', {'href': re.compile('(https:|http:).*\.(jpg|jpeg|png|gif)$')})
-        url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
-        imgs = url_pattern.findall(str(imgs))
-        step = 1
-        for img in imgs:
-            if step % 2 != 0:
-                img_url.append(img)
-            step += 1
+
+        keyword_content = []
+        
+        meta_lines = soup.find_all('div', class_='article-metaline')
+
+        try:
+            author = meta_lines[0].find(class_='article-meta-value').text
+        except:
+            author = ''
+        try:
+            title = meta_lines[1].find(class_='article-meta-value').text
+        except:
+            title = ''
+        try:
+            text_time = meta_lines[2].find(class_='article-meta-value').text
+        except:
+            text_time = ''
+        # time = meta_lines[3].find(class_='article-meta-value').text
+
+        # keyword_content.append(author)
+        # keyword_content.append(board)
+        # keyword_content.append(title)
+        # keyword_content.append(time)
+
+        content = ''
+        for tag in soup.select('#main-content')[0].contents:
+            if tag.string:
+                if '※ 發信站' in tag.string:
+                    break
+                content += tag.string.strip() + '\n'
+        
+        # keyword_content.append(content)
+        if key_word in (author + title + text_time + content):
+            print(f'作者：{author}\n標題：{title}\n時間：{text_time}\n內文：{content}')
+            imgs = soup.findAll('a', {'href': re.compile('(https:|http:).*\.(jpg|jpeg|png|gif)$',re.IGNORECASE)})
+            url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+            imgs = url_pattern.findall(str(imgs))
+            step = 1
+            for img in imgs:
+                if step % 2 != 0:
+                    img_url.append(img)
+                step += 1
         if time_limit % 100 == 0:
-                time.sleep(1)
+            time.sleep(1)
         time_limit += 1
         # print(img_url)
     key_word_filename = "keyword_" + key_word + "_" + old_start_date + "_" + old_end_date + ".json"
