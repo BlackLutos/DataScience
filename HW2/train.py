@@ -5,7 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import torch.optim as optim
-from torchsummary import summary
+import torch.nn.utils.prune as prune
+import os
+from torchinfo import summary
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
@@ -37,6 +39,8 @@ class TeacherModel(nn.Module):
         x = torch.flatten(x, 1)
         x = self.resnet50.fc(x)
         return x
+    def fuse_model(self):
+            torch.quantization.fuse_modules(self.resnet50, ['conv1', 'bn1', 'relu'], inplace=True) 
 
     # ResNet-18
 class StudentModel(nn.Module):
@@ -61,7 +65,36 @@ class StudentModel(nn.Module):
         x = torch.flatten(x, 1)
         x = self.resnet18.fc(x)
         return x
+    
 
+
+# class StudentModel(nn.Module):
+#     def __init__(self):
+#         super(StudentModel, self).__init__()
+#         self.features = models.mobilenet_v2(pretrained=True).features
+#         self.fc = nn.Linear(1280, 10)
+
+#     def forward(self, x):
+#         x = self.features(x)
+#         x = x.mean([2, 3])
+#         x = self.fc(x)
+#         return x
+
+
+def prune_weights(model):
+    parameters_to_prune =[]
+    for name, module in model.named_modules():
+        if isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear):
+            parameters_to_prune.append((module, 'weight'))
+    prune.global_unstructured(
+        parameters_to_prune,
+        pruning_method=prune.L1Unstructured, # prune.L1Unstructured
+        amount=0.99191 # 0.99999->Tensor(138006)
+    )
+    summary(model)
+    for module in model.modules():
+        if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+            prune.remove(module, 'weight')
 
 
 # def loss_fn_kd(outputs, labels, teacher_outputs, params):
@@ -95,6 +128,8 @@ teacher_model = TeacherModel().to(device)
 # teacher_model.load_state_dict(checkpoint['model_state_dict'],strict=False)
 teacher_model.load_state_dict(checkpoint['model_state_dict'])
 teacher_model.eval()
+### fuse model
+# teacher_model.fuse_model()
 
 # transform
 transform = transforms.Compose(
@@ -129,13 +164,25 @@ student_model = StudentModel().to(device)
 # alpha = 0.5
 # num_epochs = 10
 # batch_size = 128
+### Hyper Parameters
 lr = 0.001
+num_epochs = 1000
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(student_model.parameters(), lr=lr)
+sched = torch.optim.lr_scheduler.OneCycleLR(optimizer, lr, epochs=num_epochs, steps_per_epoch=len(train_loader))
 
-summary(student_model, (3, 28, 28))
 
-num_epochs = 1
+# prune_weights_2(student_model)
+
+# summary(student_model, (3, 28, 28))
+print("Before Pruning:")
+summary(student_model)
+print("After Pruning:")
+prune_weights(student_model)
+# os._exit(0)
+# print(dict(student_model.named_buffers()).keys())
+
+
 
 model_num = 1
 
@@ -162,6 +209,7 @@ for epoch in range(num_epochs):
         # Backward pass and update weights
         loss.backward()
         optimizer.step()
+        sched.step()
 
         train_loss += loss.item()
 
@@ -178,11 +226,14 @@ for epoch in range(num_epochs):
 
     accuracy = 100 * correct / total
     print(f"Accuracy of the network {model_num} times on the {total} test images: {accuracy:.2f} %")
-    total_numel = 0
-    for name, param in student_model.named_parameters():
-        if 'weight' in name:
-            total_numel += torch.sum(param != 0)
-    print("Total number of nonzero parameters after pruning: ", total_numel)
+    # total_numel = 0
+    # for name, param in student_model.named_parameters():
+    #     if 'weight' in name:
+    #         total_numel += torch.sum(param != 0)
+    # print("Total number of nonzero parameters after pruning: ", total_numel)
+    # summary(student_model)
+    ###
+    
 
     model_file_name = "./model/" + str(model_num) + ".pth"
     torch.save(student_model.state_dict(), model_file_name)
